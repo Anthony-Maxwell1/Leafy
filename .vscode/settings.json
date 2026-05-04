@@ -1,0 +1,5 @@
+{
+  "C_Cpp.errorSquiggles": "disabled",
+  "C_Cpp.default.compileCommands": "/home/anthony/leafy/builddir/compile_commands.json",
+  "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
+}
