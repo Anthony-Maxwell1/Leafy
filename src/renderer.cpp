@@ -27,13 +27,23 @@ void Renderer::present() {
     int size = fb.w * fb.h;
 
     for (int i = 0; i < size; i++) {
-        uint8_t newPx = fb.data[i];
-        uint8_t oldPx = prev[i];
+       uint8_t oldPx = prev[i];
+uint8_t newPx = fb.data[i];
 
-        if (newPx != oldPx) {
-            fb.device[i] = newPx;
-            prev[i] = newPx;
-        }
+// Case 1: pixel is drawn this frame → always draw it
+if (newPx != 255) {
+    fb.data[i] = newPx;
+    prev[i] = newPx;
+}
+// Case 2: pixel is NOT drawn this frame
+else {
+    // Only erase if it WAS previously non-white
+    if (oldPx != 255) {
+        fb.data[i] = 255;
+        prev[i] = 255;
+    }
+    // else: do nothing (already white)
+}
     }
 
     system("eips ''");

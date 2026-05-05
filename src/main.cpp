@@ -1,8 +1,58 @@
 #include "renderer.hpp"
 #include "backend.hpp"
 #include "texture_cache.hpp"
+#include "input_system.hpp"
 #include <cmath>
 #include <unistd.h>
+#include <cstring>
+
+
+// ------------------------------
+// Gradient test square (unchanged)
+// ------------------------------
+void drawGradientSquare(Framebuffer& fb, int x0, int y0, int size) {
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+
+            float fx = (float)x / size;
+            float fy = (float)y / size;
+
+            float tl = (1.0f - fx) * (1.0f - fy);
+            float tr = fx * (1.0f - fy);
+            float bl = (1.0f - fx) * fy;
+            float br = fx * fy;
+
+            float v = (tl * 0.0f + tr * 255.0f + bl * 255.0f + br * 0.0f);
+
+            int px = x0 + x;
+            int py = y0 + y;
+
+            fb.data[py * fb.stride + px] = (uint8_t)v;
+        }
+    }
+}
+
+// ------------------------------
+// Grid squares renderer
+// ------------------------------
+void drawSquares(Framebuffer& fb, int count) {
+    int size = 20;
+    int cols = fb.stride / size;
+
+    for (int i = 0; i < count; i++) {
+        int x = (i % cols) * size;
+        int y = (i / cols) * size;
+
+        for (int yy = 0; yy < size; yy++) {
+            for (int xx = 0; xx < size; xx++) {
+                int px = x + xx;
+                int py = y + yy;
+
+                fb.data[py * fb.stride + px] = 0; // black
+            }
+        }
+    }
+}
 
 // ------------------------------
 // Shapes
@@ -29,36 +79,10 @@ Polygon makeTriangle(float x, float y, float s) {
 }
 
 // ------------------------------
-// Gradient test square
-// TL = black, TR = white, BL = white, BR = black
-// ------------------------------
-void drawGradientSquare(Framebuffer& fb, int x0, int y0, int size) {
-    for (int y = 0; y < size; y++) {
-        for (int x = 0; x < size; x++) {
-
-            float fx = (float)x / size;
-            float fy = (float)y / size;
-
-            // corner blending
-            float tl = (1.0f - fx) * (1.0f - fy);
-            float tr = fx * (1.0f - fy);
-            float bl = (1.0f - fx) * fy;
-            float br = fx * fy;
-
-            float v = (tl * 0.0f + tr * 255.0f + bl * 255.0f + br * 0.0f);
-
-            int px = x0 + x;
-            int py = y0 + y;
-
-            fb.data[py * fb.stride + px] = (uint8_t)v;
-        }
-    }
-}
-
-// ------------------------------
-// Main test scene
+// MAIN
 // ------------------------------
 int main() {
+
     Framebuffer fb = initFramebuffer();
 
     Renderer r;
@@ -66,77 +90,78 @@ int main() {
 
     TextureCache texCache;
 
-    float angle = 0.0f;
+    Backlight bl;
+    bl.init();
+
+    InputSystem input;
+
+    // Track touch state for the display logic
+    bool touching = false;
+    float holdTime = 0.0f;
+    float lastTick = 0.0f;
+    int squares = 0;
+
+    const float frameStep = 0.2f; // matches sleep
+
+    // Setup input callbacks
+    input.onBegan([&](const InputEvent& e) {
+        touching = true;
+        holdTime = 0.0f;
+        lastTick = 0.0f;
+        squares = 0;
+
+        // black screen on touch
+        for (int i = 0; i < fb.stride * 600; i++) {
+            fb.data[i] = 0;
+        }
+    });
+
+    input.onGoing([&](const InputEvent& e) {
+        if (touching) {
+            holdTime += frameStep;
+
+            if (holdTime - lastTick >= 1.0f) {
+                squares++;
+                lastTick = holdTime;
+            }
+
+            drawSquares(fb, squares);
+        }
+    });
+
+    input.onEnded([&](const InputEvent& e) {
+        touching = false;
+
+        // white screen on release
+        for (int i = 0; i < fb.stride * 600; i++) {
+            fb.data[i] = 255;
+        }
+    });
 
     while (true) {
 
-        // ------------------------------
-        // Cache lifecycle
-        // ------------------------------
         texCache.beginFrame();
-
-        // ------------------------------
-        // Frame start
-        // ------------------------------
         r.beginFrame(255);
 
-        // ------------------------------
-        // 1. Gradient square (top-left)
-        // ------------------------------
-        drawGradientSquare(fb, 20, 20, 120);
+        // Read raw input from device
+        RawInputFrame rawFrame = readRawInput();
+        
+        // Process input through the system
+        input.inputFrame(rawFrame);
 
-        // ------------------------------
-        // 2. Static shapes
-        // ------------------------------
-        r.drawPolygon(makeSquare(200, 30, 80), Gray(0));      // black square
-        r.drawPolygon(makeTriangle(320, 30, 80), Gray(80));   // gray triangle
+        // Set backlight based on touch state
+        if (touching) {
+            bl.setPercent(1.0f);
+        } else {
+            bl.setPercent(0.7f);
+        }
 
-        Circle c;
-        c.c = {450, 70};
-        c.r = 40;
-        c.filled = true;
-
-        r.drawCircle(c, Gray(0));
-
-        // ------------------------------
-        // 3. Spinning square
-        // ------------------------------
-        float cx = 300, cy = 200, s = 40;
-
-        float cs = cos(angle);
-        float sn = sin(angle);
-
-        Polygon spin;
-        spin.v = {
-            {cx + (-s * cs - (-s) * sn), cy + (-s * sn + (-s) * cs)},
-            {cx + ( s * cs - (-s) * sn), cy + ( s * sn + (-s) * cs)},
-            {cx + ( s * cs - ( s) * sn), cy + ( s * sn + ( s) * cs)},
-            {cx + (-s * cs - ( s) * sn), cy + (-s * sn + ( s) * cs)}
-        };
-
-        r.drawPolygon(spin, Gray(0));
-
-        angle += 0.05f;
-
-        // ------------------------------
-        // 4. Textures
-        // ------------------------------
-        Texture& png = texCache.get("/mnt/us/test.png");
-        Texture& jpg = texCache.get("/mnt/us/test.jpg");
-        Texture& bmp = texCache.get("/mnt/us/test.bmp");
-
-        r.drawTexture(png, 50, 250);
-        r.drawTexture(jpg, 200, 250);
-        r.drawTexture(bmp, 350, 250);
-
-        // ------------------------------
-        // Present
-        // ------------------------------
+        // Present the framebuffer
         r.present();
 
         texCache.endFrame();
 
-        usleep(33000); // ~30 FPS
+        usleep(200000); // ~5 FPS logic loop
     }
 
     return 0;

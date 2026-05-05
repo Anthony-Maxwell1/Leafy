@@ -1,4 +1,4 @@
-project('example_gtk_application', 'cpp',
+project('leafy', 'cpp',
   version: 'v1.0.0',
   default_options: ['cpp_std=c++17'],
   meson_version: '>=1.1'
@@ -11,7 +11,8 @@ sources = files(
   './src/backend_kindle.cpp',
   './src/texture.cpp',
   './src/stb_image_impl.cpp',
-  './src/texture_cache.cpp'
+  './src/texture_cache.cpp',
+  './src/input_system.cpp'
 )
 
 include_dirs = include_directories(
@@ -20,7 +21,7 @@ include_dirs = include_directories(
 )
 
 executable(
-  'example_gtk_application',
+  'leafy',
   sources,
   include_directories: include_dirs,
   cpp_args: '-static-libstdc++',
