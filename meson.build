@@ -10,7 +10,8 @@ sources = files(
   './src/raster.cpp',
   './src/backend_kindle.cpp',
   './src/texture.cpp',
-  './src/stb_image_impl.cpp'
+  './src/stb_image_impl.cpp',
+  './src/texture_cache.cpp'
 )
 
 include_dirs = include_directories(
