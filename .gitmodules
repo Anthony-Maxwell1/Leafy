@@ -1,3 +1,6 @@
 [submodule "src/external/lua"]
 	path = src/external/lua
 	url = https://github.com/lua/lua.git
+[submodule "src/external/freetype"]
+	path = src/external/freetype
+	url = https://gitlab.freedesktop.org/freetype/freetype.git

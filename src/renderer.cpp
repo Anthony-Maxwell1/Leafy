@@ -3,6 +3,8 @@
 #include <cstring>
 #include <vector>
 #include <cstdlib>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 void Renderer::init(Framebuffer f) {
     fb = f;
@@ -65,3 +67,73 @@ void Renderer::drawTexture(const Texture& t, int x0, int y0) {
         }
     }
 }
+
+bool Font::load(const std::string& path, int pixelSize) {
+    if (FT_Init_FreeType(&ft)) return false;
+    if (FT_New_Face(ft, path.c_str(), 0, &face)) return false;
+
+    FT_Set_Pixel_Sizes(face, 0, pixelSize);
+    return true;
+}
+
+const Glyph& Font::get(char c) {
+
+    if (cache.count(c)) return cache[c];
+
+    FT_Load_Char(face, c, FT_LOAD_RENDER);
+    FT_GlyphSlot g = face->glyph;
+
+    Glyph glyph;
+
+    glyph.width  = g->bitmap.width;
+    glyph.height = g->bitmap.rows;
+
+    glyph.bearingX = g->bitmap_left;
+    glyph.bearingY = g->bitmap_top;
+
+    glyph.advance = g->advance.x >> 6;
+
+    // Create texture from bitmap
+    glyph.tex.w  = glyph.width;
+    glyph.tex.h = glyph.height;
+    glyph.tex.data.resize(glyph.width * glyph.height);
+
+    for (int i = 0; i < glyph.width * glyph.height; i++) {
+        glyph.tex.data[i] = g->bitmap.buffer[i];
+    }
+
+    cache[c] = glyph;
+    return cache[c];
+}
+
+void Renderer::drawText(Font& font, const std::string& text, int x, int y, uint8_t color) {
+
+    int cursorX = x;
+
+    for (char c : text) {
+
+        const Glyph& g = font.get(c);
+
+        int xpos = cursorX + g.bearingX;
+        int ypos = y - g.bearingY;
+
+        for (int yy = 0; yy < g.height; yy++) {
+            for (int xx = 0; xx < g.width; xx++) {
+
+                int px = xpos + xx;
+                int py = ypos + yy;
+
+                if (px < 0 || py < 0 || px >= fb.w || py >= fb.h)
+                    continue;
+
+                uint8_t value = g.tex.data[yy * g.width + xx];
+
+                // blend (simple overwrite for now)`
+                fb.data[py * fb.stride + px] = value;
+            }
+        }
+
+        cursorX += g.advance;
+    }
+}
+
