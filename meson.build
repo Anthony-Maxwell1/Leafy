@@ -95,7 +95,8 @@ sources = files(
   'src/texture_cache.cpp',
   'src/input_system.cpp',
   'src/app.cpp',
-  'src/lua.cpp'
+  'src/lua.cpp',
+  'src/ui.cpp'
 )
 
 include_dirs = include_directories(

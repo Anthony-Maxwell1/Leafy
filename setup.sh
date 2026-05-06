@@ -134,13 +134,15 @@ cp lua_mod/Makefile src/external/lua/Makefile
 cd src/external/lua
 
 make \
-  CC=arm-kindlehf-linux-gnueabihf-gcc \
-  AR=arm-kindlehf-linux-gnueabihf-ar \
-  RANLIB=arm-kindlehf-linux-gnueabihf-ranlib
+  CC=arm-$FIRMWARE-linux-gnueabihf-gcc \
+  AR=arm-$FIRMWARE-linux-gnueabihf-ar \
+  RANLIB=arm-$FIRMWARE-linux-gnueabihf-ranlib
 
 make install
 
-cd "$ROOT_DIR"
+cd "$ROOT_DIR/src/external/freetype"
+./autogen.sh
+./configure   --host=arm-$FIRMWARE-linux-gnueabihf   --prefix=$PWD/build   --without-harfbuzz   --without-bzip2   --without-png   --without-zlib
 
 # =========================
 # Final build

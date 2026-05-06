@@ -1,42 +1,71 @@
--- Touch-driven shape test app
--- Rectangle when idle
--- Circle while finger is held down
+-- print("Leafy test app starting")
 
-local isTouching = false
-local touchX = 300
-local touchY = 350
+-- =========================
+-- CALLBACKS
+-- =========================
+callbacks.register("began", function(id, x, y)
+    -- print("TOUCH BEGIN", id, x, y)
+end)
 
--- Finger down
-function began(id, x, y)
-    isTouching = true
-    touchX = x
-    touchY = y
-end
+callbacks.register("going", function(id, x, y)
+    -- movement spam is normal
+end)
 
--- Finger move (optional but useful)
-function going(id, x, y)
-    touchX = x
-    touchY = y
-end
+callbacks.register("ended", function(id, x, y)
+    -- print("TOUCH END", id, x, y)
+end)
 
--- Finger up
-function ended(id, x, y)
-    isTouching = false
-end
-
-
+-- =========================
+-- RENDER TEST
+-- =========================
 function start()
-    callbacks.register("began", began)
-    callbacks.register("going", going)
-    callbacks.register("ended", ended)
+    -- print("start() called")
+
+    render.circle(100, 100, 40, 50)
+    render.rect(20, 20, 80, 60, 100)
+
+    render.pixel(10, 10, 255)
+
+    render.polygon(4, {
+        {150, 150},
+        {200, 150},
+        {200, 200},
+        {150, 200}
+    }, 80)
+
+    -- =========================
+    -- UI TEST
+    -- =========================
+    local frame = ui.create("Frame")
+    ui.set(frame, "x", 50)
+    ui.set(frame, "y", 50)
+    ui.set(frame, "w", 120)
+    ui.set(frame, "h", 80)
+
+    local btn = ui.create("Button")
+    ui.set(btn, "x", 60)
+    ui.set(btn, "y", 60)
+    ui.set(btn, "w", 100)
+    ui.set(btn, "h", 40)
+
+    ui.onClick(btn, function()
+        -- print("BUTTON CLICKED")
+    end)
+
+    ui.add(frame, btn)
+
+    local cb = ui.create("Checkbox")
+    ui.set(cb, "x", 60)
+    ui.set(cb, "y", 120)
+
+    ui.onToggle(cb, function(state)
+        -- print("CHECKBOX:", state)
+    end)
+
+    ui.add(frame, cb)
 end
 
 function update(dt)
-    if isTouching then
-        -- Draw circle while touching
-        render.circle(touchX, touchY, 60, 0)
-    else
-        -- Draw rectangle when idle
-        render.rect(200, 275, 200, 150, 0)
-    end
+    -- animate something simple
+    render.circle(120, 160, 20, 120)
 end

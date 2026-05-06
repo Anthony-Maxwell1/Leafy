@@ -4,9 +4,7 @@
 #include "app.hpp"
 #include "input_system.hpp"
 
-#include <cmath>
 #include <unistd.h>
-#include <cstring>
 
 int main() {
 
@@ -20,20 +18,16 @@ int main() {
     Backlight bl;
     bl.init();
 
-    // =========================
-    // NEW INPUT SYSTEM
-    // =========================
     TouchEngine touch;
     touch.init();
 
-    const float frameStep = 0.2f; // ~5 FPS
+    const float frameStep = 0.2f;
 
-    // Launch the app
     int appPid = launchApp("/mnt/us/test/app.lua", &r);
 
-    if (appPid < 0) {
-        return 1;
-    }
+    if (appPid < 0) return 1;
+
+    App* app = getApp(appPid);
 
     while (true) {
 
@@ -41,28 +35,39 @@ int main() {
         r.beginFrame(255);
 
         // =========================
-        // INPUT (NEW MODEL)
+        // INPUT (correct pipeline)
         // =========================
         auto events = touch.consumeFrame();
 
-        // Forward touch events to Lua app
-        App* app = getApp(appPid);
         if (app) {
+
             for (auto& e : events.press) {
-                call_registered_callback(app->L, "began", {e.id, e.x, e.y});
+                call_registered_callback(app->L, "began", {
+                    LuaArg(e.id),
+                    LuaArg(e.x),
+                    LuaArg(e.y)
+                });
             }
 
             for (auto& e : events.move) {
-                call_registered_callback(app->L, "going", {e.id, e.x, e.y});
+                call_registered_callback(app->L, "going", {
+                    LuaArg(e.id),
+                    LuaArg(e.x),
+                    LuaArg(e.y)
+                });
             }
 
             for (auto& e : events.release) {
-                call_registered_callback(app->L, "ended", {e.id, e.x, e.y});
+                call_registered_callback(app->L, "ended", {
+                    LuaArg(e.id),
+                    LuaArg(e.x),
+                    LuaArg(e.y)
+                });
             }
         }
 
         // =========================
-        // APP UPDATE
+        // LUA FRAME
         // =========================
         frame(frameStep);
 
@@ -72,10 +77,9 @@ int main() {
         r.present();
         texCache.endFrame();
 
-        usleep(200000); // ~5 FPS logic loop
+        usleep(200000); // ~5 FPS
     }
 
     closeApp(appPid);
-
     return 0;
 }

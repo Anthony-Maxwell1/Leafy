@@ -8,6 +8,7 @@
 #include <map>
 #include "renderer.hpp"
 #include "core.hpp"
+#include "ui.hpp"
 
 // -------- from lua.cpp ----
 void setup_sandbox(lua_State* L);
@@ -243,9 +244,76 @@ int l_polygon(lua_State* L) {
     for (int i = 0; i < n; i++) { 
         lua_pushinteger(L, i + 2); 
         lua_gettable(L, -2); 
-        if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; } lua_pushinteger(L, 1); lua_gettable(L, -2); float x = luaL_checknumber(L, -1); lua_pop(L, 1); lua_pushinteger(L, 2); lua_gettable(L, -2); float y = luaL_checknumber(L, -1); lua_pop(L, 1); p.v.push_back({x, y}); } 
+        if (!lua_istable(L, -1)) { 
+            lua_pop(L, 1); return 0; } lua_pushinteger(L, 1); lua_gettable(L, -2); float x = luaL_checknumber(L, -1); lua_pop(L, 1); lua_pushinteger(L, 2); lua_gettable(L, -2); float y = luaL_checknumber(L, -1); lua_pop(L, 1); p.v.push_back({x, y}); } 
         // Get fill color 
         int gray = luaL_optinteger(L, 2, 0); ctx->renderer->drawPolygon(p, Gray(gray)); return 0; }
+
+int l_onTouchBegin(lua_State* L) {
+    View* v = (View*)lua_touserdata(L, 1);
+
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    v->onTouchBegin = [ref, L](const UITouchEvent& e) -> bool {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+        lua_pushinteger(L, e.id);
+        lua_pushinteger(L, e.x);
+        lua_pushinteger(L, e.y);
+
+        if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
+            return false;
+        }
+
+        return lua_toboolean(L, -1);
+    };
+
+    return 0;
+}
+
+int l_onTouchGoing(lua_State* L) {
+    View* v = (View*)lua_touserdata(L, 1);
+
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    v->onTouchGoing = [ref, L](const UITouchEvent& e) -> bool {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+        lua_pushinteger(L, e.id);
+        lua_pushinteger(L, e.x);
+        lua_pushinteger(L, e.y);
+
+        if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
+            return false;
+        }
+
+        return lua_toboolean(L, -1);
+    };
+
+    return 0;
+}
+
+int l_onTouchEnd(lua_State* L) {
+    View* v = (View*)lua_touserdata(L, 1);
+
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+
+    v->onTouchEnd = [ref, L](const UITouchEvent& e) -> bool {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+        lua_pushinteger(L, e.id);
+        lua_pushinteger(L, e.x);
+        lua_pushinteger(L, e.y);
+
+        if (lua_pcall(L, 3, 1, 0) != LUA_OK) {
+            return false;
+        }
+
+        return lua_toboolean(L, -1);
+    };
+
+    return 0;
+}
 
 std::map<std::string, std::vector<LuaFunction>> build_api() {
     return {
@@ -263,11 +331,26 @@ std::map<std::string, std::vector<LuaFunction>> build_api() {
             {
                 {"register", l_registerCallback}
             }
+        },
+        {
+            "ui",
+            {
+                {"create", l_createView},
+                {"set", l_set},
+                {"add", l_add},
+
+                // events
+                {"onClick", l_onClick},
+                {"onToggle", l_onToggle},
+
+                // 🔥 generic touch hooks (important)
+                {"onTouchBegin", l_onTouchBegin},
+                {"onTouchGoing", l_onTouchGoing},
+                {"onTouchEnd", l_onTouchEnd}
+            }
         }
     };
 }
-
-
 
 // ========================
 // Launch app
