@@ -1,7 +1,54 @@
-project('leafy', 'cpp',
+project('leafy', 'cpp', 'c',
   version: 'v1.0.0',
   default_options: ['cpp_std=c++17'],
   meson_version: '>=1.1'
+)
+
+# =====================================
+# BUILD LUA AS STATIC LIBRARY
+# =====================================
+
+lua_sources = files(
+  './src/external/lua/lapi.c',
+  './src/external/lua/lauxlib.c',
+  './src/external/lua/lbaselib.c',
+  './src/external/lua/lcode.c',
+  './src/external/lua/lcorolib.c',
+  './src/external/lua/lctype.c',
+  './src/external/lua/ldblib.c',
+  './src/external/lua/ldebug.c',
+  './src/external/lua/ldo.c',
+  './src/external/lua/ldump.c',
+  './src/external/lua/lfunc.c',
+  './src/external/lua/lgc.c',
+  './src/external/lua/linit.c',
+  './src/external/lua/liolib.c',
+  './src/external/lua/llex.c',
+  './src/external/lua/lmathlib.c',
+  './src/external/lua/lmem.c',
+  './src/external/lua/loadlib.c',
+  './src/external/lua/lobject.c',
+  './src/external/lua/lopcodes.c',
+  './src/external/lua/loslib.c',
+  './src/external/lua/lparser.c',
+  './src/external/lua/lstate.c',
+  './src/external/lua/lstring.c',
+  './src/external/lua/lstrlib.c',
+  './src/external/lua/ltable.c',
+  './src/external/lua/ltablib.c',
+  './src/external/lua/ltm.c',
+  './src/external/lua/lundump.c',
+  './src/external/lua/lutf8lib.c',
+  './src/external/lua/lvm.c',
+  './src/external/lua/lzio.c',
+)
+
+lua_lib = static_library('lua',
+  lua_sources,
+  include_directories: include_directories('./src/external/lua'),
+  c_args: ['-Wno-implicit-function-declaration'],
+  pic: true,
+  native: false
 )
 
 sources = files(
@@ -13,21 +60,23 @@ sources = files(
   './src/stb_image_impl.cpp',
   './src/texture_cache.cpp',
   './src/input_system.cpp',
-  # './src/app.cpp',
-  # './src/lua.cpp'
+  './src/app.cpp',
+  './src/lua.cpp'
 )
 
 
 
 include_dirs = include_directories(
   './src/include/',
-  './src/external'
+  './src/external',
+  './src/external/lua'
 )
 
 executable(
   'leafy',
   sources,
   include_directories: include_dirs,
+  link_with: lua_lib,
   cpp_args: '-static-libstdc++',
   link_args: ['-static-libstdc++']
 )
