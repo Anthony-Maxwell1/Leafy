@@ -6,10 +6,6 @@ local isTouching = false
 local touchX = 300
 local touchY = 350
 
-function start()
-    print("Touch shape test started!")
-end
-
 -- Finger down
 function began(id, x, y)
     isTouching = true
@@ -28,12 +24,19 @@ function ended(id, x, y)
     isTouching = false
 end
 
+
+function start()
+    callbacks.register("began", began)
+    callbacks.register("going", going)
+    callbacks.register("ended", ended)
+end
+
 function update(dt)
     if isTouching then
         -- Draw circle while touching
-        leafy.circle(touchX, touchY, 60, 0)
+        render.circle(touchX, touchY, 60, 0)
     else
         -- Draw rectangle when idle
-        leafy.rect(200, 275, 200, 150, 0)
+        render.rect(200, 275, 200, 150, 0)
     end
 end

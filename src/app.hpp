@@ -1,10 +1,33 @@
 #pragma once
 
 #include <string>
+#include <vector>
+
+// Forward declaration of lua_State
+extern "C" {
+    struct lua_State;
+}
 
 // Forward declarations
 class Renderer;
 struct lua_State;
+
+// Lua argument wrapper for callbacks
+struct LuaArg {
+    enum Type { INT, FLOAT, STRING };
+    Type type;
+    union {
+        int i;
+        float f;
+        const char* s;
+    } value;
+    
+    LuaArg(int v) : type(INT) { value.i = v; }
+    LuaArg(float v) : type(FLOAT) { value.f = v; }
+    LuaArg(const char* v) : type(STRING) { value.s = v; }
+    
+    void push(lua_State* L) const;  // Defined in app.cpp
+};
 
 // App context for Lua scripts
 struct AppContext {
@@ -32,6 +55,12 @@ void closeApp(int pid);
 
 // Update all running apps by dt (in seconds)
 void frame(float dt);
+
+// Get app by PID (for direct access if needed)
+App* getApp(int pid);
+
+// Call registered callback with argument list
+void call_registered_callback(lua_State* L, const char* name, const std::vector<LuaArg>& args = {});
 
 // Get app by PID (for direct access if needed)
 App* getApp(int pid);

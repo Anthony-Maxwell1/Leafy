@@ -1,4 +1,5 @@
 // app.cpp
+#include "app.hpp"
 #include "lua.hpp"
 #include <iostream>
 #include <vector>
@@ -16,36 +17,19 @@ bool run_script(lua_State* L, const std::string& path);
 void call_start(lua_State* L);
 void call_update(lua_State* L, float dt);
 
-// ========================
-// Lua argument wrapper
-// ========================
-struct LuaArg {
-    enum Type { INT, FLOAT, STRING };
-    Type type;
-
-    union {
-        int i;
-        float f;
-        const char* s;
-    } value;
-
-    LuaArg(int v) : type(INT) { value.i = v; }
-    LuaArg(float v) : type(FLOAT) { value.f = v; }
-    LuaArg(const char* v) : type(STRING) { value.s = v; }
-
-    void push(lua_State* L) const {
-        switch (type) {
-            case INT: lua_pushinteger(L, value.i); break;
-            case FLOAT: lua_pushnumber(L, value.f); break;
-            case STRING: lua_pushstring(L, value.s); break;
-        }
+// -------- LuaArg implementation --------
+void LuaArg::push(lua_State* L) const {
+    switch (type) {
+        case INT: lua_pushinteger(L, value.i); break;
+        case FLOAT: lua_pushnumber(L, value.f); break;
+        case STRING: lua_pushstring(L, value.s); break;
     }
-};
+}
 
-// ========================
-// Callback executor
-// ========================
-void dispatch_callback(lua_State* L, const char* name, const std::vector<LuaArg>& args = {}) {
+// -------- Callback execution with arguments --------
+
+// Call callback with argument list
+void call_registered_callback(lua_State* L, const char* name, const std::vector<LuaArg>& args) {
     lua_getfield(L, LUA_REGISTRYINDEX, "__callbacks");
 
     if (lua_isnil(L, -1)) {
@@ -77,17 +61,6 @@ void dispatch_callback(lua_State* L, const char* name, const std::vector<LuaArg>
 // ========================
 class Renderer;
 
-struct AppContext {
-    std::string id;
-    Renderer* renderer;
-};
-
-struct App {
-    int pid;
-    lua_State* L;
-    AppContext ctx;
-};
-
 static std::unordered_map<int, std::unique_ptr<App>> apps;
 static int next_pid = 1;
 
@@ -105,7 +78,7 @@ AppContext* get_ctx(lua_State* L) {
 // INPUT EVENT DISPATCH
 // ========================
 void onBegan(lua_State* L, int id, int x, int y) {
-    dispatch_callback(L, "began", {
+    call_registered_callback(L, "began", {
         LuaArg(id),
         LuaArg(x),
         LuaArg(y)
@@ -113,7 +86,7 @@ void onBegan(lua_State* L, int id, int x, int y) {
 }
 
 void onGoing(lua_State* L, int id, int x, int y) {
-    dispatch_callback(L, "going", {
+    call_registered_callback(L, "going", {
         LuaArg(id),
         LuaArg(x),
         LuaArg(y)
@@ -121,7 +94,7 @@ void onGoing(lua_State* L, int id, int x, int y) {
 }
 
 void onEnded(lua_State* L, int id, int x, int y) {
-    dispatch_callback(L, "ended", {
+    call_registered_callback(L, "ended", {
         LuaArg(id),
         LuaArg(x),
         LuaArg(y)
@@ -184,7 +157,16 @@ void frame(float dt) {
         call_update(app->L, dt);
     }
 }
-
+// ========================
+// Get App by PID
+// ========================
+App* getApp(int pid) {
+    auto it = apps.find(pid);
+    if (it != apps.end()) {
+        return it->second.get();
+    }
+    return nullptr;
+}
 // ========================
 // Rendering API
 // ========================

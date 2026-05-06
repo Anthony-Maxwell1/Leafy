@@ -45,18 +45,21 @@ int main() {
         // =========================
         auto events = touch.consumeFrame();
 
-        // You can forward events to Lua/app layer here
-        // for (auto& e : events.press) {
-        //     input.onPress(e.x, e.y);
-        // }
+        // Forward touch events to Lua app
+        App* app = getApp(appPid);
+        if (app) {
+            for (auto& e : events.press) {
+                call_registered_callback(app->L, "began", {e.id, e.x, e.y});
+            }
 
-        // for (auto& e : events.move) {
-        //     input.onMove(e.x, e.y);
-        // }
+            for (auto& e : events.move) {
+                call_registered_callback(app->L, "going", {e.id, e.x, e.y});
+            }
 
-        // for (auto& e : events.release) {
-        //     input.onRelease(e.x, e.y);
-        // }
+            for (auto& e : events.release) {
+                call_registered_callback(app->L, "ended", {e.id, e.x, e.y});
+            }
+        }
 
         // =========================
         // APP UPDATE
