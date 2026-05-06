@@ -18,10 +18,10 @@ void call_update(lua_State* L, float dt);
 // ------------------------
 // API function struct
 // ------------------------
-struct LuaFunction {
-    std::string name;
-    lua_CFunction func;
-};
+// struct LuaFunction {
+//     std::string name;
+//     lua_CFunction func;
+// };
 
 // Forward declaration
 class Renderer;

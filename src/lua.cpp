@@ -1,5 +1,9 @@
 // lua.cpp
-#include <lua.hpp>
+extern "C" {
+#include "lua.h"
+#include "lauxlib.h"
+#include "lualib.h"
+}
 #include <string>
 #include <vector>
 #include <map>
@@ -19,7 +23,7 @@ void setup_sandbox(lua_State* L) {
     lua_newtable(L); // global env
 
     // Allow basic functions
-    lua_pushcfunction(L, luaB_print);
+    lua_getglobal(L, "print");
     lua_setfield(L, -2, "print");
 
     // math lib

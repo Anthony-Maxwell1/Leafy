@@ -17,6 +17,8 @@ sources = files(
   './src/lua.cpp'
 )
 
+
+
 include_dirs = include_directories(
   './src/include/',
   './src/external'
@@ -27,5 +29,5 @@ executable(
   sources,
   include_directories: include_dirs,
   cpp_args: '-static-libstdc++',
-  link_args: '-static-libstdc++'
+  link_args: ['-static-libstdc++']
 )
