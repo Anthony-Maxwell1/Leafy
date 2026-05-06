@@ -1,22 +1,29 @@
 #include "backend.hpp"
+
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/mman.h>
 #include <sys/ioctl.h>
-#include <linux/fb.h>
 #include <linux/input.h>
-#include <cstring>
-#include <cstdlib>
-#include <fstream>
+#include <linux/fb.h>
+#include <sys/mman.h>
+
 #include <filesystem>
+#include <fstream>
 #include <iostream>
-#include <unordered_map>
+#include <cstring>
 #include <algorithm>
 
 namespace fs = std::filesystem;
 
+// =====================================
+// FRAMEBUFFER
+// =====================================
+
 static int fbfd;
 static uint8_t* fbmem = nullptr;
+
+static int screenWidth = 600;
+static int screenHeight = 800;
 
 Framebuffer initFramebuffer() {
     fbfd = open("/dev/fb0", O_RDWR);
@@ -29,8 +36,10 @@ Framebuffer initFramebuffer() {
 
     int w = v.xres;
     int h = v.yres;
+    screenWidth = w;
+    screenHeight = h;
 
-    fbmem = (uint8_t*)mmap(nullptr, w * h,
+    fbmem = (uint8_t*)mmap(nullptr, f.line_length * h,
                            PROT_READ | PROT_WRITE,
                            MAP_SHARED, fbfd, 0);
 
@@ -38,20 +47,20 @@ Framebuffer initFramebuffer() {
 }
 
 void present(Framebuffer fb) {
-    // full copy (safe baseline; optimize later)
     std::memcpy(fb.device, fb.data, fb.w * fb.h);
-
-    // Kindle refresh trigger (temporary hack)
-    system("eips ''");
+    system("eips '' >/dev/null 2>&1");
 }
+
+// =====================================
+// BACKLIGHT
+// =====================================
 
 static std::string findBacklightPath() {
     std::string base = "/sys/class/backlight";
 
-    for (auto &entry : fs::directory_iterator(base)) {
-        if (entry.is_directory()) {
-            return entry.path().string();
-        }
+    for (auto &e : fs::directory_iterator(base)) {
+        if (e.is_directory())
+            return e.path().string();
     }
 
     return "";
@@ -59,11 +68,7 @@ static std::string findBacklightPath() {
 
 bool Backlight::init() {
     path = findBacklightPath();
-
-    if (path.empty()) {
-        std::cerr << "No backlight device found\n";
-        return false;
-    }
+    if (path.empty()) return false;
 
     maxBrightness = getMax();
     return maxBrightness > 0;
@@ -71,24 +76,20 @@ bool Backlight::init() {
 
 int Backlight::getMax() const {
     std::ifstream f(path + "/max_brightness");
-    int value = 0;
-    f >> value;
-    return value;
+    int v = 0;
+    f >> v;
+    return v;
 }
 
 int Backlight::getCurrent() const {
     std::ifstream f(path + "/brightness");
-    int value = 0;
-    f >> value;
-    return value;
+    int v = 0;
+    f >> v;
+    return v;
 }
 
 bool Backlight::set(int value) {
-    if (maxBrightness > 0 && value > maxBrightness)
-        value = maxBrightness;
-
-    if (value < 0)
-        value = 0;
+    value = std::clamp(value, 0, maxBrightness);
 
     std::ofstream f(path + "/brightness");
     if (!f.is_open()) return false;
@@ -98,141 +99,152 @@ bool Backlight::set(int value) {
 }
 
 bool Backlight::setPercent(float pct) {
-    if (pct < 0.0f) pct = 0.0f;
-    if (pct > 1.0f) pct = 1.0f;
-
-    int value = static_cast<int>(pct * getMax());
-    return set(value);
+    pct = std::clamp(pct, 0.0f, 1.0f);
+    return set((int)(pct * maxBrightness));
 }
 
-// ========================================
-// TOUCH INPUT SYSTEM - EVENT BASED
-// ========================================
+// =====================================
+// TOUCH ENGINE
+// =====================================
 
-static int touchEventFd = -1;
-static bool inputInitialized = false;
-static int screenWidth = 600;
-static int screenHeight = 800;
+// -------- init --------
 
-// Track current touch state
-struct TouchState {
-    int x;
-    int y;
-    bool active;
-};
+void TouchEngine::init() {
+    if (initialized) return;
 
-static std::unordered_map<int, TouchState> activeTouches;
-
-static void initTouchInput() {
-    if (inputInitialized) return;
-
-    // Try common touch device paths
     const char* paths[] = {
-        "/dev/input/event2",  // Most common on Kindle
+        "/dev/input/event2",
         "/dev/input/event1",
         "/dev/input/event0"
     };
 
-    for (const char* path : paths) {
-        int fd = open(path, O_RDONLY | O_NONBLOCK);
-        if (fd >= 0) {
-            std::cerr << "Opened touch device: " << path << std::endl;
-            touchEventFd = fd;
-            inputInitialized = true;
+    for (auto p : paths) {
+        int f = open(p, O_RDONLY | O_NONBLOCK);
+        if (f >= 0) {
+            fd = f;
+            std::cerr << "Touch opened: " << p << "\n";
+            initialized = true;
             return;
         }
     }
 
-    std::cerr << "Warning: Could not open any touch device\n";
-    inputInitialized = true;
+    std::cerr << "Touch init failed\n";
+    initialized = true;
 }
 
-RawInputFrame readRawInput() {
-    if (!inputInitialized) {
-        initTouchInput();
-    }
+// -------- low-level poll --------
 
+RawInputFrame TouchEngine::poll() {
     RawInputFrame frame;
 
-    if (touchEventFd < 0) {
-        return frame;  // No input device
-    }
+    if (fd < 0) return frame;
 
-    struct input_event ev[64];
-    ssize_t n = read(touchEventFd, ev, sizeof(ev));
+    input_event ev[64];
+    ssize_t n = read(fd, ev, sizeof(ev));
 
-    if (n <= 0) {
-        // No new events - return current state
-        for (const auto& [slot, state] : activeTouches) {
-            RawInputEvent evt;
-            evt.id = slot;
-            evt.x = std::clamp(state.x, 0, screenWidth - 1);
-            evt.y = std::clamp(state.y, 0, screenHeight - 1);
-            evt.down = true;
-            frame.events.push_back(evt);
-        }
-        return frame;
-    }
+    if (n <= 0) return frame;
 
-    int numEvents = n / sizeof(struct input_event);
+    int count = n / sizeof(input_event);
 
-    // Current event being assembled
-    static int currentSlot = 0;
+    // Temp state across events
     static int currentX = 0, currentY = 0;
-    std::vector<int> releasedTouches;
+    static int currentId = 0;
+    static bool currentDown = false;
 
-    for (int i = 0; i < numEvents; i++) {
-        const input_event& e = ev[i];
+    for (int i = 0; i < count; i++) {
+        const auto& e = ev[i];
 
         if (e.type == EV_ABS) {
-            if (e.code == ABS_MT_SLOT) {
-                currentSlot = e.value;
-            } else if (e.code == ABS_MT_POSITION_X) {
+            // Capture coordinates
+            if (e.code == ABS_MT_POSITION_X || e.code == 53) {
                 currentX = e.value;
-            } else if (e.code == ABS_MT_POSITION_Y) {
-                currentY = e.value;
-            } else if (e.code == ABS_MT_TRACKING_ID) {
-                // TRACKING_ID >= 0: touch active
-                // TRACKING_ID < 0: touch released
-                if (e.value >= 0) {
-                    // Touch is down - update or add to active touches
-                    activeTouches[currentSlot] = {currentX, currentY, true};
-                } else {
-                    // Touch released - mark for removal after emitting
-                    auto it = activeTouches.find(currentSlot);
-                    if (it != activeTouches.end()) {
-                        releasedTouches.push_back(currentSlot);
-                    }
-                }
             }
-        }
-    }
-
-    // Build frame with all currently active touches (down=true)
-    for (const auto& [slot, state] : activeTouches) {
-        RawInputEvent evt;
-        evt.id = slot;
-        evt.x = std::clamp(state.x, 0, screenWidth - 1);
-        evt.y = std::clamp(state.y, 0, screenHeight - 1);
-        evt.down = true;
-        frame.events.push_back(evt);
-    }
-
-    // Add released touches with down=false so InputSystem can detect the transition
-    for (int slot : releasedTouches) {
-        auto it = activeTouches.find(slot);
-        if (it != activeTouches.end()) {
-            RawInputEvent evt;
-            evt.id = slot;
-            evt.x = std::clamp(it->second.x, 0, screenWidth - 1);
-            evt.y = std::clamp(it->second.y, 0, screenHeight - 1);
-            evt.down = false;
-            frame.events.push_back(evt);
+            if (e.code == ABS_MT_POSITION_Y || e.code == 54) {
+                currentY = e.value;
+            }
+            if (e.code == ABS_MT_TRACKING_ID || e.code == 57) {
+                currentId = e.value;
+            }
+        } else if (e.type == EV_KEY) {
+            // Capture down state
+            if (e.code == 330) { // BTN_TOUCH
+                currentDown = (e.value == 1);
+            }
+        } else if (e.type == EV_SYN && e.code == 0) { // SYN_REPORT
+            // Emit complete event with all captured state
+            RawInputEvent out;
+            out.id = (currentId >= 0) ? 0 : -1;  // Valid touch if tracking ID >= 0
+            out.x = currentX;
+            out.y = currentY;
+            out.down = currentDown && (currentId >= 0);
             
-            // Now remove it from active touches
-            activeTouches.erase(it);
+            frame.events.push_back(out);
         }
     }
 
     return frame;
+}
+
+// -------- event ingestion --------
+
+void TouchEngine::handleEvent(const RawInputEvent& e) {
+    int id = e.id;
+
+    auto& f = fingers[id];
+
+    if (e.down) {
+        if (!f.active) {
+            f.active = true;
+            f.changed = true;
+        }
+    }
+
+    if (e.x || e.y) {
+        if (f.x != e.x || f.y != e.y) {
+            f.x = e.x;
+            f.y = e.y;
+            f.changed = true;
+        }
+    }
+
+    if (!e.down && f.active) {
+        f.active = false;
+        f.changed = true;
+    }
+}
+
+// -------- frame processing --------
+
+TouchEngine::Events TouchEngine::consumeFrame() {
+    Events out;
+
+    RawInputFrame frame = poll();
+
+    for (auto& e : frame.events) {
+        handleEvent(e);
+    }
+
+    // diff previous vs current
+    for (auto& [id, f] : fingers) {
+
+        auto& prev = previous[id];
+
+        if (!prev.active && f.active) {
+            out.press.push_back({id, f.x, f.y, true});
+        }
+
+        if (prev.active && !f.active) {
+            out.release.push_back({id, f.x, f.y, false});
+        }
+
+        if (f.active &&
+            (f.x != prev.x || f.y != prev.y)) {
+            out.move.push_back({id, f.x, f.y, true});
+        }
+
+        prev = f;
+        f.changed = false;
+    }
+
+    return out;
 }

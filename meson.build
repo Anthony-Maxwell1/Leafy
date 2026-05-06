@@ -13,8 +13,8 @@ sources = files(
   './src/stb_image_impl.cpp',
   './src/texture_cache.cpp',
   './src/input_system.cpp',
-  './src/app.cpp',
-  './src/lua.cpp'
+  # './src/app.cpp',
+  # './src/lua.cpp'
 )
 
 

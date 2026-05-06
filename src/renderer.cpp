@@ -7,7 +7,7 @@
 void Renderer::init(Framebuffer f) {
     fb = f;
 
-    prev.resize(fb.w * fb.h);
+    prev.resize(fb.stride * fb.h);
     std::fill(prev.begin(), prev.end(), 255);
 }
 
@@ -24,7 +24,7 @@ void Renderer::drawCircle(const Circle& c, Color col) {
 }
 
 void Renderer::present() {
-    int size = fb.w * fb.h;
+    int size = fb.stride * fb.h;
 
     for (int i = 0; i < size; i++) {
        uint8_t oldPx = prev[i];
@@ -46,7 +46,7 @@ else {
 }
     }
 
-    system("eips ''");
+    system("eips '' >/dev/null 2>&1");
 }
 
 void Renderer::drawTexture(const Texture& t, int x0, int y0) {
