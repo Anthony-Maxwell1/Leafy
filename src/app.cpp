@@ -4,10 +4,11 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <map>
 #include "renderer.hpp"
 #include "core.hpp"
 
-// ---- from lua.cpp ----
+// -------- from lua.cpp ----
 void setup_sandbox(lua_State* L);
 void register_namespaces(lua_State* L,
     const std::map<std::string, std::vector<struct LuaFunction>>& api);
@@ -15,46 +16,173 @@ bool run_script(lua_State* L, const std::string& path);
 void call_start(lua_State* L);
 void call_update(lua_State* L, float dt);
 
-// ------------------------
-// API function struct
-// ------------------------
-// struct LuaFunction {
-//     std::string name;
-//     lua_CFunction func;
-// };
+// ========================
+// Lua argument wrapper
+// ========================
+struct LuaArg {
+    enum Type { INT, FLOAT, STRING };
+    Type type;
 
-// Forward declaration
+    union {
+        int i;
+        float f;
+        const char* s;
+    } value;
+
+    LuaArg(int v) : type(INT) { value.i = v; }
+    LuaArg(float v) : type(FLOAT) { value.f = v; }
+    LuaArg(const char* v) : type(STRING) { value.s = v; }
+
+    void push(lua_State* L) const {
+        switch (type) {
+            case INT: lua_pushinteger(L, value.i); break;
+            case FLOAT: lua_pushnumber(L, value.f); break;
+            case STRING: lua_pushstring(L, value.s); break;
+        }
+    }
+};
+
+// ========================
+// Callback executor
+// ========================
+void dispatch_callback(lua_State* L, const char* name, const std::vector<LuaArg>& args = {}) {
+    lua_getfield(L, LUA_REGISTRYINDEX, "__callbacks");
+
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_getfield(L, -1, name);
+
+    if (!lua_isfunction(L, -1)) {
+        lua_pop(L, 2);
+        return;
+    }
+
+    lua_remove(L, -2); // remove __callbacks table
+
+    for (const auto& arg : args) {
+        arg.push(L);
+    }
+
+    if (lua_pcall(L, args.size(), 0, 0) != LUA_OK) {
+        std::cerr << "[Lua callback error] " << lua_tostring(L, -1) << "\n";
+        lua_pop(L, 1);
+    }
+}
+
+// ========================
+// Forward declarations
+// ========================
 class Renderer;
 
-// ------------------------
-// App Context
-// ------------------------
 struct AppContext {
     std::string id;
     Renderer* renderer;
 };
 
-// ------------------------
-// App Instance
-// ------------------------
 struct App {
     int pid;
     lua_State* L;
     AppContext ctx;
 };
 
-// ------------------------
-// Global app registry
-// ------------------------
 static std::unordered_map<int, std::unique_ptr<App>> apps;
 static int next_pid = 1;
 
-// ------------------------
-// Helpers
-// ------------------------
+// ========================
+// Context helper
+// ========================
 AppContext* get_ctx(lua_State* L) {
     lua_getglobal(L, "__ctx");
-    return (AppContext*)lua_touserdata(L, -1);
+    AppContext* ctx = (AppContext*)lua_touserdata(L, -1);
+    lua_pop(L, 1);
+    return ctx;
+}
+
+// ========================
+// INPUT EVENT DISPATCH
+// ========================
+void onBegan(lua_State* L, int id, int x, int y) {
+    dispatch_callback(L, "began", {
+        LuaArg(id),
+        LuaArg(x),
+        LuaArg(y)
+    });
+}
+
+void onGoing(lua_State* L, int id, int x, int y) {
+    dispatch_callback(L, "going", {
+        LuaArg(id),
+        LuaArg(x),
+        LuaArg(y)
+    });
+}
+
+void onEnded(lua_State* L, int id, int x, int y) {
+    dispatch_callback(L, "ended", {
+        LuaArg(id),
+        LuaArg(x),
+        LuaArg(y)
+    });
+}
+
+// ========================
+// Multi-app input broadcast
+// ========================
+void dispatch_input_began(int id, int x, int y) {
+    for (auto& [pid, app] : apps)
+        onBegan(app->L, id, x, y);
+}
+
+void dispatch_input_going(int id, int x, int y) {
+    for (auto& [pid, app] : apps)
+        onGoing(app->L, id, x, y);
+}
+
+void dispatch_input_ended(int id, int x, int y) {
+    for (auto& [pid, app] : apps)
+        onEnded(app->L, id, x, y);
+}
+
+// ========================
+// INIT HOOK (your requested function)
+// ========================
+void registerCallbacksFunction() {
+    std::cout << "[Leafy] Input callbacks registered\n";
+}
+
+// ========================
+// Lua callback registration API
+// ========================
+int l_registerCallback(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+
+    lua_getfield(L, LUA_REGISTRYINDEX, "__callbacks");
+
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_setfield(L, LUA_REGISTRYINDEX, "__callbacks");
+        lua_getfield(L, LUA_REGISTRYINDEX, "__callbacks");
+    }
+
+    lua_pushvalue(L, 2);
+    lua_setfield(L, -2, name);
+
+    lua_pop(L, 1);
+    return 0;
+}
+
+// ========================
+// Frame loop
+// ========================
+void frame(float dt) {
+    for (auto& [pid, app] : apps) {
+        call_update(app->L, dt);
+    }
 }
 
 // ========================
@@ -121,49 +249,63 @@ int l_pixel(lua_State* L) {
     ctx->renderer->drawPolygon(p, Gray(gray));
     return 0;
 }
+int l_polygon(lua_State* L) { 
+    AppContext* ctx = get_ctx(L); if (!ctx || !ctx->renderer) return 0; 
+    // Get the number of vertices 
+    int n = luaL_checkinteger(L, 1); 
+    if (n < 3) return 0; 
+    // Create polygon 
+    Polygon p; 
+    p.v.reserve(n); 
+    // Get vertex coordinates 
+    for (int i = 0; i < n; i++) { 
+        lua_pushinteger(L, i + 2); 
+        lua_gettable(L, -2); 
+        if (!lua_istable(L, -1)) { lua_pop(L, 1); return 0; } lua_pushinteger(L, 1); lua_gettable(L, -2); float x = luaL_checknumber(L, -1); lua_pop(L, 1); lua_pushinteger(L, 2); lua_gettable(L, -2); float y = luaL_checknumber(L, -1); lua_pop(L, 1); p.v.push_back({x, y}); } 
+        // Get fill color 
+        int gray = luaL_optinteger(L, 2, 0); ctx->renderer->drawPolygon(p, Gray(gray)); return 0; }
 
-// ========================
-// API builder
-// ========================
 std::map<std::string, std::vector<LuaFunction>> build_api() {
     return {
         {
-            "leafy",
+            "render",
             {
                 {"circle", l_circle},
                 {"rect", l_rect},
+                {"polygon", l_polygon},
                 {"pixel", l_pixel}
+            }
+        },
+        {
+            "callbacks",
+            {
+                {"register", l_registerCallback}
             }
         }
     };
 }
 
-// ------------------------
-// Attach context
-// ------------------------
-void attach_context(lua_State* L, AppContext* ctx) {
-    lua_pushlightuserdata(L, ctx);
-    lua_setglobal(L, "__ctx");
-}
+
 
 // ========================
-// 🚀 Launch App
+// Launch app
 // ========================
 int launchApp(const std::string& path, Renderer* renderer) {
     lua_State* L = luaL_newstate();
 
     setup_sandbox(L);
 
-    auto api = build_api();
+    std::map<std::string, std::vector<LuaFunction>> api = build_api();
+
     register_namespaces(L, api);
 
-    // Create app
     auto app = std::make_unique<App>();
     app->pid = next_pid++;
     app->L = L;
     app->ctx = { path, renderer };
 
-    attach_context(L, &app->ctx);
+    lua_pushlightuserdata(L, &app->ctx);
+    lua_setglobal(L, "__ctx");
 
     if (!run_script(L, path)) {
         std::cerr << "Failed to load app\n";
@@ -181,7 +323,7 @@ int launchApp(const std::string& path, Renderer* renderer) {
 }
 
 // ========================
-// ❌ Close App
+// Close app
 // ========================
 void closeApp(int pid) {
     auto it = apps.find(pid);
@@ -191,13 +333,4 @@ void closeApp(int pid) {
     apps.erase(it);
 
     std::cout << "[Leafy] Closed app PID=" << pid << "\n";
-}
-
-// ========================
-// 🎯 Frame Loop
-// ========================
-void frame(float dt) {
-    for (auto& [pid, app] : apps) {
-        call_update(app->L, dt);
-    }
 }
