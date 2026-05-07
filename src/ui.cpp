@@ -42,10 +42,25 @@ void Frame::draw(Renderer& r) {
     if (hasBackground) {
         Polygon p;
         p.v = {
-            {x, y}, {x + w, y},
-            {x + w, y + h}, {x, y + h}
+            {(float)x, (float)y}, {(float)(x+w), (float)y},
+            {(float)(x+w), (float)(y+h)}, {(float)x, (float)(y+h)}
         };
         r.drawPolygon(p, {bgColor});
+    }
+
+    if (hasStroke) {
+        // Top
+        Polygon t; t.v = {{(float)x,(float)y},{(float)(x+w),(float)y},{(float)(x+w),(float)(y+2)},{(float)x,(float)(y+2)}};
+        r.drawPolygon(t, {strokeColor});
+        // Bottom
+        Polygon b; b.v = {{(float)x,(float)(y+h-2)},{(float)(x+w),(float)(y+h-2)},{(float)(x+w),(float)(y+h)},{(float)x,(float)(y+h)}};
+        r.drawPolygon(b, {strokeColor});
+        // Left
+        Polygon l; l.v = {{(float)x,(float)y},{(float)(x+2),(float)y},{(float)(x+2),(float)(y+h)},{(float)x,(float)(y+h)}};
+        r.drawPolygon(l, {strokeColor});
+        // Right
+        Polygon rr; rr.v = {{(float)(x+w-2),(float)y},{(float)(x+w),(float)y},{(float)(x+w),(float)(y+h)},{(float)(x+w-2),(float)(y+h)}};
+        r.drawPolygon(rr, {strokeColor});
     }
 
     View::draw(r);
@@ -57,7 +72,8 @@ void Frame::draw(Renderer& r) {
 void Text::draw(Renderer& r) {
     Frame::draw(r);
     if (font) {
-        r.drawText(*font, content, x, y + h, color);
+        // y + h positions the baseline at the bottom of the frame; use y + h - 4 for padding
+        r.drawText(*font, content, x + 4, y + h - 4, color);
     }
 }
 
@@ -213,14 +229,17 @@ int l_set(lua_State* L) {
     else if (strcmp(key, "w") == 0) v->w = luaL_checkinteger(L, 3);
     else if (strcmp(key, "h") == 0) v->h = luaL_checkinteger(L, 3);
     else if (strcmp(key, "z") == 0) v->z = luaL_checkinteger(L, 3);
+    else if (strcmp(key, "visible") == 0) v->visible = lua_toboolean(L, 3);
 
-    // Frame-specific (Button and Checkbox inherit from Frame)
+    // Frame-specific
     if (auto f = dynamic_cast<Frame*>(v)) {
         if (strcmp(key, "bgColor") == 0) {
-            f->bgColor = luaL_checkinteger(L, 3);
-        }
-        else if (strcmp(key, "hasBackground") == 0) {
+            f->bgColor = (uint8_t)luaL_checkinteger(L, 3);
+        } else if (strcmp(key, "hasBackground") == 0) {
             f->hasBackground = lua_toboolean(L, 3);
+        } else if (strcmp(key, "strokeColor") == 0) {
+            f->strokeColor = (uint8_t)luaL_checkinteger(L, 3);
+            f->hasStroke = true;
         }
     }
 
@@ -228,7 +247,22 @@ int l_set(lua_State* L) {
     if (auto t = dynamic_cast<Text*>(v)) {
         if (strcmp(key, "text") == 0) {
             t->content = luaL_checkstring(L, 3);
+        } else if (strcmp(key, "color") == 0) {
+            t->color = (uint8_t)luaL_checkinteger(L, 3);
+        } else if (strcmp(key, "font") == 0) {
+            if (lua_isuserdata(L, 3))
+                t->font = (Font*)lua_touserdata(L, 3);
         }
+    }
+
+    // TextureView / TextureFrame
+    if (auto tv = dynamic_cast<TextureView*>(v)) {
+        if (strcmp(key, "texture") == 0 && lua_isuserdata(L, 3))
+            tv->texture = (Texture*)lua_touserdata(L, 3);
+    }
+    if (auto tf = dynamic_cast<TextureFrame*>(v)) {
+        if (strcmp(key, "texture") == 0 && lua_isuserdata(L, 3))
+            tf->texture = (Texture*)lua_touserdata(L, 3);
     }
 
     return 0;
