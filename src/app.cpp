@@ -7,7 +7,9 @@
 #include <unordered_map>
 #include <memory>
 #include <map>
+#include <cstring>
 #include "renderer.hpp"
+#include "texture.hpp"
 #include "core.hpp"
 
 // -------- from lua.cpp ----
@@ -277,6 +279,67 @@ int l_polygon(lua_State* L) {
     return 0;
 }
 
+int l_drawText(lua_State* L) {
+    AppContext* ctx = get_ctx(L);
+    if (!ctx || !ctx->renderer) return 0;
+
+    int x = luaL_checkinteger(L, 1);
+    int y = luaL_checkinteger(L, 2);
+    const char* text = luaL_checkstring(L, 3);
+    int size = luaL_optinteger(L, 4, 16);
+    int gray = luaL_optinteger(L, 5, 0);
+
+    // TODO: Font support - for now, render text as simple geometric boxes
+    // This is a placeholder that renders text as blocks
+    for (int i = 0; i < (int)std::strlen(text); i++) {
+        int px = x + i * (size / 2);
+        Polygon p;
+        p.v = {
+            {(float)px, (float)y},
+            {(float)(px + size/2 - 2), (float)y},
+            {(float)(px + size/2 - 2), (float)(y + size)},
+            {(float)px, (float)(y + size)}
+        };
+        ctx->renderer->drawPolygon(p, Gray(gray));
+    }
+    return 0;
+}
+
+int l_loadTexture(lua_State* L) {
+    AppContext* ctx = get_ctx(L);
+    if (!ctx || !ctx->renderer) return 0;
+
+    const char* path = luaL_checkstring(L, 1);
+    
+    // Load texture from file
+    Texture t = loadTexture(path);
+    
+    if (t.data.empty()) {
+        lua_pushnil(L);
+        return 1;
+    }
+    
+    // Create texture userdata
+    Texture* tex = (Texture*)lua_newuserdata(L, sizeof(Texture));
+    *tex = t;
+    
+    return 1;
+}
+
+int l_drawTexture(lua_State* L) {
+    AppContext* ctx = get_ctx(L);
+    if (!ctx || !ctx->renderer) return 0;
+
+    Texture* tex = (Texture*)lua_touserdata(L, 1);
+    int x = luaL_checkinteger(L, 2);
+    int y = luaL_checkinteger(L, 3);
+    
+    if (!tex || tex->data.empty()) return 0;
+    
+    ctx->renderer->drawTexture(*tex, x, y);
+    return 0;
+}
+
 int l_onTouchBegin(lua_State* L) {
     View* v = (View*)lua_touserdata(L, 1);
 
@@ -362,7 +425,10 @@ std::map<std::string, std::vector<LuaFunction>> build_api() {
                 {"circle", l_circle},
                 {"rect", l_rect},
                 {"polygon", l_polygon},
-                {"pixel", l_pixel}
+                {"pixel", l_pixel},
+                {"text", l_drawText},
+                {"loadTexture", l_loadTexture},
+                {"drawTexture", l_drawTexture}
             }
         },
         {

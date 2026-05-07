@@ -1,54 +1,31 @@
 -- =========================
--- LAUNCHER APP
+-- LAUNCHER APP - REDESIGNED
 -- =========================
 SCREEN_W = 600
 SCREEN_H = 800
 
--- App definitions
+-- App definitions with maximum contrast
 local APPS = {
-    {id=1, name="Settings", color=100},
-    {id=2, name="Calendar", color=150},
-    {id=3, name="Music", color=200},
-    {id=4, name="Books", color=50},
-    {id=5, name="Clock", color=80},
-    {id=6, name="Weather", color=120},
-    {id=7, name="Camera", color=180},
-    {id=8, name="Gallery", color=140},
-    {id=9, name="Email", color=160},
-    {id=10, name="Notes", color=110},
-    {id=11, name="Maps", color=130},
-    {id=12, name="Store", color=170},
+    {id=1, name="1:Settings", color=15},   -- Almost black
+    {id=2, name="2:Calendar", color=40},   
+    {id=3, name="3:Music", color=90},      
+    {id=4, name="4:Books", color=140},     
+    {id=5, name="5:Clock", color=190},     
+    {id=6, name="6:Weather", color=245},   -- Almost white
+    {id=7, name="7:Camera", color=25},     
+    {id=8, name="8:Gallery", color=65},    
+    {id=9, name="9:Email", color=115},     
+    {id=10, name="10:Notes", color=165},   
+    {id=11, name="11:Maps", color=215},    
+    {id=12, name="12:Store", color=255},   -- Pure white
 }
 
-local APPS_PER_PAGE = 6  -- 3x2 grid
+local APPS_PER_PAGE = 6
 local current_page = 0
-local dialog_open = false
-local dialog_app_name = ""
-
--- =========================
--- STATE
--- =========================
-local app_grid = nil
+local dialog_app_id = nil
+local app_buttons = {}
 local prev_btn = nil
 local next_btn = nil
-local page_info_frame = nil
-local status_bar = nil
-local dialog_frame = nil
-local dialog_close_btn = nil
-local weather_frame = nil
-local time_frame = nil
-local system_frame = nil
-
--- =========================
--- UTILITY FUNCTIONS
--- =========================
-function resolve_size(value, dimension)
-    if value < 1 then
-        return math.floor(dimension * value)
-    else
-        return math.floor(value)
-    end
-end
 
 -- =========================
 -- GRID COMPONENT
@@ -76,209 +53,221 @@ function Grid(x, y, width, height, rows, cols, spacing)
 end
 
 -- =========================
--- HSTACK COMPONENT
+-- TEXTURE LOADING
 -- =========================
-function HStack(x, y, width, height)
-    return {
-        x = x, y = y, width = width, height = height,
-        children = {},
-        
-        add = function(self, child)
-            table.insert(self.children, child)
-            self:_layout()
-        end,
-        
-        _layout = function(self)
-            if #self.children == 0 then return end
-            local child_width = math.floor(self.width / #self.children)
-            for i, child in ipairs(self.children) do
-                local child_x = math.floor(self.x + (i - 1) * child_width)
-                ui.set(child, "x", child_x)
-                ui.set(child, "y", self.y)
-                ui.set(child, "w", child_width)
-                ui.set(child, "h", self.height)
-            end
-        end
+local textures = {}
+
+function load_textures()
+    -- App icon textures
+    textures.app_settings = render.loadTexture("/mnt/us/textures/app_settings.ppm") or nil
+    textures.app_calendar = render.loadTexture("/mnt/us/textures/app_calendar.ppm") or nil
+    textures.app_music = render.loadTexture("/mnt/us/textures/app_music.ppm") or nil
+    textures.app_books = render.loadTexture("/mnt/us/textures/app_books.ppm") or nil
+    textures.app_clock = render.loadTexture("/mnt/us/textures/app_clock.ppm") or nil
+    textures.app_weather = render.loadTexture("/mnt/us/textures/app_weather.ppm") or nil
+    
+    -- Status bar widget textures
+    textures.widget_weather = render.loadTexture("/mnt/us/textures/widget_weather.ppm") or nil
+    textures.widget_time = render.loadTexture("/mnt/us/textures/widget_time.ppm") or nil
+    textures.widget_system = render.loadTexture("/mnt/us/textures/widget_system.ppm") or nil
+    textures.widget_battery = render.loadTexture("/mnt/us/textures/widget_battery.ppm") or nil
+    
+    print("[LAUNCHER] Textures loaded")
+end
+
+function get_app_texture(app_id)
+    if not textures or app_id < 1 or app_id > #APPS then
+        return nil
+    end
+    
+    local texture_map = {
+        textures.app_settings, textures.app_calendar, textures.app_music,
+        textures.app_books, textures.app_clock, textures.app_weather,
+        textures.app_settings, textures.app_calendar, textures.app_music,
+        textures.app_books, textures.app_clock, textures.app_weather
     }
+    
+    if #texture_map == 0 then
+        return nil
+    end
+    
+    local idx = ((app_id - 1) % #texture_map) + 1
+    return texture_map[idx]
 end
 
 -- =========================
 -- CALLBACKS
 -- =========================
 callbacks.register("began", function(id, x, y)
-    -- print("[TOUCH] BEGIN at (" .. x .. "," .. y .. ")")
 end)
 
 callbacks.register("ended", function(id, x, y)
-    -- print("[TOUCH] END at (" .. x .. "," .. y .. ")")
 end)
-
--- =========================
--- START FUNCTION
--- =========================
 function start()
-    print("[LAUNCHER] Starting launcher app")
-    print("[LAUNCHER] Screen: " .. SCREEN_W .. "x" .. SCREEN_H)
+    print("[LAUNCHER] Starting")
+    load_textures()
     
-    -- HEADER AREA (50px)
-    local header_frame = ui.create("Frame")
-    ui.set(header_frame, "x", 0)
-    ui.set(header_frame, "y", 0)
-    ui.set(header_frame, "w", SCREEN_W)
-    ui.set(header_frame, "h", 40)
-    ui.addToRoot(header_frame)
-    print("[LAUNCHER] Created header")
+    -- APP GRID AREA
+    local app_grid = Grid(30, 80, 540, 240, 2, 3, 15)
     
-    -- APP GRID AREA (350px)
-    app_grid = Grid(20, 60, 560, 320, 2, 3, 15)
-    
-    local app_buttons = {}
-    for i = 1, APPS_PER_PAGE do
-        local app_idx = current_page * APPS_PER_PAGE + i
-        if app_idx <= #APPS then
-            local app = APPS[app_idx]
-            local row = ((i - 1) % 2) + 1
-            local col = math.floor((i - 1) / 2) + 1
-            
-            local x, y, w, h = app_grid:tile(row, col)
-            local btn = ui.create("Button")
-            ui.set(btn, "x", x)
-            ui.set(btn, "y", y)
-            ui.set(btn, "w", w)
-            ui.set(btn, "h", h)
-            
-            ui.onClick(btn, function()
-                print("[LAUNCHER] App '" .. app.name .. "' tapped!")
-                dialog_app_name = app.name
-                dialog_open = true
-                show_app_dialog(app.name)
-            end)
-            
-            ui.addToRoot(btn)
-            app_buttons[i] = {btn=btn, app=app}
+    -- Create app buttons
+    local function create_app_buttons()
+        app_buttons = {}
+        
+        for i = 1, APPS_PER_PAGE do
+            local app_idx = current_page * APPS_PER_PAGE + i
+            if app_idx <= #APPS then
+                local app = APPS[app_idx]
+                local row = ((i - 1) % 2) + 1
+                local col = math.floor((i - 1) / 2) + 1
+                
+                local x, y, w, h = app_grid:tile(row, col)
+                local btn = ui.create("Button")
+                ui.set(btn, "x", x)
+                ui.set(btn, "y", y)
+                ui.set(btn, "w", w)
+                ui.set(btn, "h", h)
+                ui.set(btn, "bgColor", app.color)
+                
+                local function on_click()
+                    print("[LAUNCHER] Opened " .. app.name)
+                    dialog_app_id = app.id
+                    show_dialog(app)
+                end
+                
+                ui.onClick(btn, on_click)
+                ui.addToRoot(btn)
+                table.insert(app_buttons, btn)
+            end
         end
+        
+        print("[LAUNCHER] Created " .. #app_buttons .. " buttons")
     end
-    print("[LAUNCHER] Created " .. #app_buttons .. " app buttons for page " .. current_page)
     
-    -- NAVIGATION AREA (50px)
+    create_app_buttons()
+    
+    -- NAVIGATION BUTTONS
     prev_btn = ui.create("Button")
-    ui.set(prev_btn, "x", 20)
-    ui.set(prev_btn, "y", 400)
-    ui.set(prev_btn, "w", 50)
-    ui.set(prev_btn, "h", 40)
+    ui.set(prev_btn, "x", 10)
+    ui.set(prev_btn, "y", 330)
+    ui.set(prev_btn, "w", 60)
+    ui.set(prev_btn, "h", 80)
+    ui.set(prev_btn, "bgColor", 80)
     ui.onClick(prev_btn, function()
         if current_page > 0 then
             current_page = current_page - 1
-            print("[LAUNCHER] Navigated to page " .. current_page)
-            reset_app_grid()
+            print("[LAUNCHER] <- Page " .. current_page)
+            create_app_buttons()
         end
     end)
     ui.addToRoot(prev_btn)
     
-    -- Page info
-    page_info_frame = ui.create("Frame")
-    ui.set(page_info_frame, "x", 280)
-    ui.set(page_info_frame, "y", 400)
-    ui.set(page_info_frame, "w", 40)
-    ui.set(page_info_frame, "h", 40)
-    ui.addToRoot(page_info_frame)
-    
     next_btn = ui.create("Button")
     ui.set(next_btn, "x", 530)
-    ui.set(next_btn, "y", 400)
-    ui.set(next_btn, "w", 50)
-    ui.set(next_btn, "h", 40)
+    ui.set(next_btn, "y", 330)
+    ui.set(next_btn, "w", 60)
+    ui.set(next_btn, "h", 80)
+    ui.set(next_btn, "bgColor", 80)
     ui.onClick(next_btn, function()
         local max_pages = math.ceil(#APPS / APPS_PER_PAGE) - 1
         if current_page < max_pages then
             current_page = current_page + 1
-            print("[LAUNCHER] Navigated to page " .. current_page)
-            reset_app_grid()
+            print("[LAUNCHER] -> Page " .. current_page)
+            create_app_buttons()
         end
     end)
     ui.addToRoot(next_btn)
-    print("[LAUNCHER] Created navigation buttons")
     
-    -- STATUS BAR AREA (100px bottom)
-    status_bar = ui.create("Frame")
+    -- STATUS BAR (MAIN BOTTOM SECTION) - LIGHT BACKGROUND WITH WIDGETS
+    local status_bar = ui.create("Frame")
     ui.set(status_bar, "x", 0)
-    ui.set(status_bar, "y", SCREEN_H - 100)
+    ui.set(status_bar, "y", 430)
     ui.set(status_bar, "w", SCREEN_W)
-    ui.set(status_bar, "h", 100)
+    ui.set(status_bar, "h", 370)
+    ui.set(status_bar, "bgColor", 235)
     ui.addToRoot(status_bar)
     
-    -- Weather widget in status bar
-    weather_frame = ui.create("Frame")
-    ui.set(weather_frame, "x", 20)
-    ui.set(weather_frame, "y", SCREEN_H - 90)
-    ui.set(weather_frame, "w", 120)
-    ui.set(weather_frame, "h", 80)
-    ui.addToRoot(weather_frame)
+    -- WIDGET BOXES - Weather, Time, System
+    local weather_box = ui.create("Frame")
+    ui.set(weather_box, "x", 20)
+    ui.set(weather_box, "y", 450)
+    ui.set(weather_box, "w", 160)
+    ui.set(weather_box, "h", 100)
+    ui.set(weather_box, "bgColor", 210)
+    ui.addToRoot(weather_box)
     
-    -- Time widget in status bar
-    time_frame = ui.create("Frame")
-    ui.set(time_frame, "x", 160)
-    ui.set(time_frame, "y", SCREEN_H - 90)
-    ui.set(time_frame, "w", 120)
-    ui.set(time_frame, "h", 80)
-    ui.addToRoot(time_frame)
+    local time_box = ui.create("Frame")
+    ui.set(time_box, "x", 200)
+    ui.set(time_box, "y", 450)
+    ui.set(time_box, "w", 160)
+    ui.set(time_box, "h", 100)
+    ui.set(time_box, "bgColor", 210)
+    ui.addToRoot(time_box)
     
-    -- System widget in status bar (battery, signal, etc)
-    system_frame = ui.create("Frame")
-    ui.set(system_frame, "x", 300)
-    ui.set(system_frame, "y", SCREEN_H - 90)
-    ui.set(system_frame, "w", 280)
-    ui.set(system_frame, "h", 80)
-    ui.addToRoot(system_frame)
+    local system_box = ui.create("Frame")
+    ui.set(system_box, "x", 380)
+    ui.set(system_box, "y", 450)
+    ui.set(system_box, "w", 200)
+    ui.set(system_box, "h", 100)
+    ui.set(system_box, "bgColor", 210)
+    ui.addToRoot(system_box)
     
-    print("[LAUNCHER] Created status bar with widgets")
-    print("[LAUNCHER] Launcher ready!")
+    -- BATTERY LEVEL BOX
+    local battery_box = ui.create("Frame")
+    ui.set(battery_box, "x", 20)
+    ui.set(battery_box, "y", 570)
+    ui.set(battery_box, "w", 540)
+    ui.set(battery_box, "h", 80)
+    ui.set(battery_box, "bgColor", 210)
+    ui.addToRoot(battery_box)
+    
+    print("[LAUNCHER] Ready!")
 end
 
-function show_app_dialog(app_name)
-    print("[LAUNCHER] Showing dialog for '" .. app_name .. "'")
-    
-    -- Modal background (semi-transparent frame covering whole screen)
-    local modal_bg = ui.create("Frame")
-    ui.set(modal_bg, "x", 0)
-    ui.set(modal_bg, "y", 0)
-    ui.set(modal_bg, "w", SCREEN_W)
-    ui.set(modal_bg, "h", SCREEN_H)
-    ui.addToRoot(modal_bg)
-    
-    -- Dialog box
-    dialog_frame = ui.create("Frame")
-    ui.set(dialog_frame, "x", 50)
-    ui.set(dialog_frame, "y", 200)
-    ui.set(dialog_frame, "w", 500)
-    ui.set(dialog_frame, "h", 300)
-    ui.addToRoot(dialog_frame)
+function show_dialog(app)
+    -- Dialog background (semi-dark)
+    local dialog_bg = ui.create("Frame")
+    ui.set(dialog_bg, "x", 50)
+    ui.set(dialog_bg, "y", 200)
+    ui.set(dialog_bg, "w", 500)
+    ui.set(dialog_bg, "h", 250)
+    ui.set(dialog_bg, "bgColor", 170)
+    ui.addToRoot(dialog_bg)
     
     -- Close button
-    dialog_close_btn = ui.create("Button")
-    ui.set(dialog_close_btn, "x", 450)
-    ui.set(dialog_close_btn, "y", 210)
-    ui.set(dialog_close_btn, "w", 80)
-    ui.set(dialog_close_btn, "h", 30)
-    ui.onClick(dialog_close_btn, function()
-        print("[LAUNCHER] Closing dialog")
-        dialog_open = false
-        close_app_dialog()
+    local close_btn = ui.create("Button")
+    ui.set(close_btn, "x", 480)
+    ui.set(close_btn, "y", 210)
+    ui.set(close_btn, "w", 60)
+    ui.set(close_btn, "h", 40)
+    ui.set(close_btn, "bgColor", 80)
+    ui.onClick(close_btn, function()
+        print("[LAUNCHER] Closed " .. app.name)
+        dialog_app_id = nil
     end)
-    ui.addToRoot(dialog_close_btn)
+    ui.addToRoot(close_btn)
+end
+
+function update(dt)
+    -- =============================
+    -- HEADER SECTION
+    -- =============================
+    -- Top bar background
+    render.polygon({
+        {0, 0}, {SCREEN_W, 0},
+        {SCREEN_W, 40}, {0, 40}
+    }, 240)
     
-    print("[LAUNCHER] Dialog setup complete")
-end
-
-function close_app_dialog()
-    -- In a full implementation, we would remove the dialog frames
-    -- For now, just log it
-    print("[LAUNCHER] Dialog closed")
-end
-
-function reset_app_grid()
-    print("[LAUNCHER] Resetting app grid for page " .. current_page)
-    -- Recreate app grid buttons for new page
+    -- Top bar border
+    render.polygon({
+        {0, 38}, {SCREEN_W, 38},
+        {SCREEN_W, 42}, {0, 42}
+    }, 0)
+    
+    -- =============================
+    -- APP BUTTON ICONS (TEXTURES)
+    -- =============================
+    local app_grid = Grid(30, 80, 540, 240, 2, 3, 15)
     for i = 1, APPS_PER_PAGE do
         local app_idx = current_page * APPS_PER_PAGE + i
         if app_idx <= #APPS then
@@ -287,48 +276,148 @@ function reset_app_grid()
             local col = math.floor((i - 1) / 2) + 1
             
             local x, y, w, h = app_grid:tile(row, col)
-            local btn = ui.create("Button")
-            ui.set(btn, "x", x)
-            ui.set(btn, "y", y)
-            ui.set(btn, "w", w)
-            ui.set(btn, "h", h)
             
-            ui.onClick(btn, function()
-                print("[LAUNCHER] App '" .. app.name .. "' tapped!")
-                dialog_app_name = app.name
-                dialog_open = true
-                show_app_dialog(app.name)
-            end)
+            -- Draw app texture icon (centered in top of button)
+            local icon_x = x + w/2 - 20
+            local icon_y = y + 8
+            local tex = get_app_texture(app_idx)
+            if tex then
+                render.drawTexture(tex, icon_x, icon_y)
+            end
             
-            ui.addToRoot(btn)
+            -- App label
+            local label_x = x + 5
+            local label_y = y + 50
+            render.text(label_x, label_y, app.name, 12, 40)
         end
     end
-    print("[LAUNCHER] App grid reset complete")
-end
-
-function update(dt)
-    -- Draw decorative elements and icons
-    -- App icon indicators in grid area
-    render.circle(100, 120, 15, 100)  -- Circle icon
-    render.rect(250, 120, 20, 20, 150)  -- Square icon
-    render.polygon({  -- Triangle icon
-        {400, 100},
-        {420, 140},
-        {380, 140}
-    }, 200)
     
-    -- Status bar indicators
-    render.circle(70, SCREEN_H - 40, 10, 80)  -- Weather cloud icon
-    render.rect(195, SCREEN_H - 40, 12, 12, 120)  -- Clock icon
-    render.circle(350, SCREEN_H - 40, 8, 160)  -- Signal strength icon
+    -- =============================
+    -- GRID VISUAL DIVIDERS
+    -- =============================
+    -- Vertical dividers (high contrast)
+    render.polygon({
+        {209, 80}, {216, 80},
+        {216, 320}, {209, 320}
+    }, 0)
     
-    if dialog_open then
-        -- Draw dialog decorative border
-        render.polygon({
-            {50, 200},
-            {550, 200},
-            {550, 500},
-            {50, 500}
-        }, 50)
+    render.polygon({
+        {388, 80}, {395, 80},
+        {395, 320}, {388, 320}
+    }, 0)
+    
+    -- Horizontal divider
+    render.polygon({
+        {30, 194}, {570, 194},
+        {570, 201}, {30, 201}
+    }, 0)
+    
+    -- =============================
+    -- NAVIGATION ARROWS
+    -- =============================
+    -- Left arrow
+    render.polygon({
+        {32, 360},
+        {48, 345},
+        {48, 375}
+    }, 255)
+    
+    -- Right arrow
+    render.polygon({
+        {548, 360},
+        {532, 345},
+        {532, 375}
+    }, 255)
+    
+    -- =============================
+    -- STATUS BAR BORDERS
+    -- =============================
+    -- Top border of status bar
+    render.polygon({
+        {0, 428}, {SCREEN_W, 428},
+        {SCREEN_W, 432}, {0, 432}
+    }, 0)
+    
+    -- Dividers in status bar
+    render.polygon({
+        {188, 450}, {192, 450},
+        {192, 550}, {188, 550}
+    }, 0)
+    
+    render.polygon({
+        {368, 450}, {372, 450},
+        {372, 550}, {368, 550}
+    }, 0)
+    
+    -- Battery divider
+    render.polygon({
+        {0, 568}, {SCREEN_W, 568},
+        {SCREEN_W, 572}, {0, 572}
+    }, 0)
+    
+    -- =============================
+    -- STATUS BAR WIDGET TEXTURES
+    -- =============================
+    -- Weather widget with texture
+    if textures.widget_weather then
+        render.drawTexture(textures.widget_weather, 20, 450)
     end
+    render.text(30, 520, "Weather", 10, 100)
+    
+    -- Time widget with texture
+    if textures.widget_time then
+        render.drawTexture(textures.widget_time, 200, 450)
+    end
+    render.text(210, 520, "12:30 PM", 10, 100)
+    
+    -- System widget with texture
+    if textures.widget_system then
+        render.drawTexture(textures.widget_system, 380, 450)
+    end
+    render.text(390, 520, "System", 10, 100)
+    
+    -- =============================
+    -- BATTERY VISUALIZATION
+    -- =============================
+    -- Battery widget texture
+    if textures.widget_battery then
+        render.drawTexture(textures.widget_battery, 20, 570)
+    end
+    
+    -- Battery label
+    render.text(200, 640, "Battery: 80%", 10, 100)
+    
+    -- =============================
+    -- PAGE INDICATOR
+    -- =============================
+    local max_pages = math.ceil(#APPS / 6)
+    for p = 0, max_pages - 1 do
+        local dot_x = 270 + p * 20
+        if p == current_page then
+            render.circle(dot_x, 720, 7, 0)  -- Filled dark
+        else
+            render.circle(dot_x, 720, 6, 120)  -- Outline light
+        end
+    end
+    
+    -- Page number label
+    render.text(280, 740, "Page " .. (current_page + 1) .. "/" .. max_pages, 10, 100)
+    
+    -- =============================
+    -- BOTTOM DECORATIONS
+    -- =============================
+    -- Bottom bar
+    render.polygon({
+        {0, 755}, {SCREEN_W, 755},
+        {SCREEN_W, 800}, {0, 800}
+    }, 220)
+    
+    -- Bottom bar border
+    render.polygon({
+        {0, 752}, {SCREEN_W, 752},
+        {SCREEN_W, 756}, {0, 756}
+    }, 0)
+    
+    -- Version label
+    render.text(250, 775, "Leafy v1.0", 9, 100)
 end

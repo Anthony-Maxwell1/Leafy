@@ -214,8 +214,18 @@ int l_set(lua_State* L) {
     else if (strcmp(key, "h") == 0) v->h = luaL_checkinteger(L, 3);
     else if (strcmp(key, "z") == 0) v->z = luaL_checkinteger(L, 3);
 
+    // Frame-specific (Button and Checkbox inherit from Frame)
+    if (auto f = dynamic_cast<Frame*>(v)) {
+        if (strcmp(key, "bgColor") == 0) {
+            f->bgColor = luaL_checkinteger(L, 3);
+        }
+        else if (strcmp(key, "hasBackground") == 0) {
+            f->hasBackground = lua_toboolean(L, 3);
+        }
+    }
+
     // Text-specific
-    else if (auto t = dynamic_cast<Text*>(v)) {
+    if (auto t = dynamic_cast<Text*>(v)) {
         if (strcmp(key, "text") == 0) {
             t->content = luaL_checkstring(L, 3);
         }
