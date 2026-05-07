@@ -131,6 +131,17 @@ public:
 
     void bindInput(InputSystem& input);
     void render(Renderer& r);
+    
+    // Handle touch events
+    void handleTouchBegin(const UITouchEvent& e) {
+        dispatchBegin(&root, e);
+    }
+    void handleTouchGoing(const UITouchEvent& e) {
+        dispatchGoing(&root, e);
+    }
+    void handleTouchEnd(const UITouchEvent& e) {
+        dispatchEnd(&root, e);
+    }
 
 private:
     bool dispatchBegin(View* v, const UITouchEvent& e);

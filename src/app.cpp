@@ -1,6 +1,7 @@
 // app.cpp
 #include "app.hpp"
 #include "lua.hpp"
+#include "ui.hpp"
 #include <iostream>
 #include <vector>
 #include <unordered_map>
@@ -8,7 +9,6 @@
 #include <map>
 #include "renderer.hpp"
 #include "core.hpp"
-#include "ui.hpp"
 
 // -------- from lua.cpp ----
 void setup_sandbox(lua_State* L);
@@ -156,6 +156,10 @@ int l_registerCallback(lua_State* L) {
 void frame(float dt) {
     for (auto& [pid, app] : apps) {
         call_update(app->L, dt);
+        // Render UI for this app
+        if (app->ui && app->ctx.renderer) {
+            app->ui->render(*app->ctx.renderer);
+        }
     }
 }
 // ========================
@@ -232,22 +236,46 @@ int l_pixel(lua_State* L) {
     ctx->renderer->drawPolygon(p, Gray(gray));
     return 0;
 }
-int l_polygon(lua_State* L) { 
-    AppContext* ctx = get_ctx(L); if (!ctx || !ctx->renderer) return 0; 
-    // Get the number of vertices 
-    int n = luaL_checkinteger(L, 1); 
-    if (n < 3) return 0; 
-    // Create polygon 
-    Polygon p; 
-    p.v.reserve(n); 
-    // Get vertex coordinates 
-    for (int i = 0; i < n; i++) { 
-        lua_pushinteger(L, i + 2); 
-        lua_gettable(L, -2); 
-        if (!lua_istable(L, -1)) { 
-            lua_pop(L, 1); return 0; } lua_pushinteger(L, 1); lua_gettable(L, -2); float x = luaL_checknumber(L, -1); lua_pop(L, 1); lua_pushinteger(L, 2); lua_gettable(L, -2); float y = luaL_checknumber(L, -1); lua_pop(L, 1); p.v.push_back({x, y}); } 
-        // Get fill color 
-        int gray = luaL_optinteger(L, 2, 0); ctx->renderer->drawPolygon(p, Gray(gray)); return 0; }
+int l_polygon(lua_State* L) {
+    AppContext* ctx = get_ctx(L);
+    if (!ctx || !ctx->renderer) return 0;
+
+    // Arg 1: table of {x, y} vertices
+    luaL_checktype(L, 1, LUA_TTABLE);
+    int n = lua_rawlen(L, 1);  // Get table length
+    if (n < 3) return 0;
+
+    // Arg 2: gray value (optional)
+    int gray = luaL_optinteger(L, 2, 0);
+
+    // Create polygon from table
+    Polygon p;
+    p.v.reserve(n);
+
+    for (int i = 0; i < n; i++) {
+        lua_rawgeti(L, 1, i + 1);  // Get vertices[i+1]
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, 1);
+            return 0;
+        }
+
+        // Get x coordinate (first element of vertex table)
+        lua_rawgeti(L, -1, 1);
+        float x = luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+
+        // Get y coordinate (second element of vertex table)
+        lua_rawgeti(L, -1, 2);
+        float y = luaL_checknumber(L, -1);
+        lua_pop(L, 1);
+
+        p.v.push_back({x, y});
+        lua_pop(L, 1);  // Pop the vertex table
+    }
+
+    ctx->renderer->drawPolygon(p, Gray(gray));
+    return 0;
+}
 
 int l_onTouchBegin(lua_State* L) {
     View* v = (View*)lua_touserdata(L, 1);
@@ -315,6 +343,17 @@ int l_onTouchEnd(lua_State* L) {
     return 0;
 }
 
+// Add view to UISystem root
+int l_addToRoot(lua_State* L) {
+    View* v = (View*)lua_touserdata(L, 1);
+    AppContext* ctx = get_ctx(L);
+    
+    if (!ctx || !ctx->ui) return 0;
+    
+    ctx->ui->root.addChild(std::unique_ptr<View>(v));
+    return 0;
+}
+
 std::map<std::string, std::vector<LuaFunction>> build_api() {
     return {
         {
@@ -338,6 +377,7 @@ std::map<std::string, std::vector<LuaFunction>> build_api() {
                 {"create", l_createView},
                 {"set", l_set},
                 {"add", l_add},
+                {"addToRoot", l_addToRoot},
 
                 // events
                 {"onClick", l_onClick},
@@ -367,7 +407,8 @@ int launchApp(const std::string& path, Renderer* renderer) {
     auto app = std::make_unique<App>();
     app->pid = next_pid++;
     app->L = L;
-    app->ctx = { path, renderer };
+    app->ui = std::make_unique<UISystem>();
+    app->ctx = { path, renderer, app->ui.get() };
 
     lua_pushlightuserdata(L, &app->ctx);
     lua_setglobal(L, "__ctx");

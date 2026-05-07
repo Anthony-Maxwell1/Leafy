@@ -1,5 +1,6 @@
 #include "ui.hpp"
 #include <algorithm>
+#include <iostream>
 
 // ==============================
 // VIEW BASE

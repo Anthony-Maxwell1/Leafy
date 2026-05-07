@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <memory>
 
 // Forward declaration of lua_State
 extern "C" {
@@ -10,6 +11,7 @@ extern "C" {
 
 // Forward declarations
 class Renderer;
+class UISystem;
 struct lua_State;
 
 // Lua argument wrapper for callbacks
@@ -33,6 +35,7 @@ struct LuaArg {
 struct AppContext {
     std::string id;
     Renderer* renderer;
+    UISystem* ui;
 };
 
 // App instance
@@ -40,6 +43,7 @@ struct App {
     int pid;
     lua_State* L;
     AppContext ctx;
+    std::unique_ptr<UISystem> ui;
 };
 
 // ========================

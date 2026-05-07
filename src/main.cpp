@@ -3,6 +3,7 @@
 #include "texture_cache.hpp"
 #include "app.hpp"
 #include "input_system.hpp"
+#include "ui.hpp"
 
 #include <unistd.h>
 
@@ -40,7 +41,7 @@ int main() {
         auto events = touch.consumeFrame();
 
         if (app) {
-
+            // Route to Lua callbacks
             for (auto& e : events.press) {
                 call_registered_callback(app->L, "began", {
                     LuaArg(e.id),
@@ -63,6 +64,19 @@ int main() {
                     LuaArg(e.x),
                     LuaArg(e.y)
                 });
+            }
+            
+            // Route to UI system
+            if (app->ui) {
+                for (auto& e : events.press) {
+                    app->ui->handleTouchBegin({e.id, e.x, e.y});
+                }
+                for (auto& e : events.move) {
+                    app->ui->handleTouchGoing({e.id, e.x, e.y});
+                }
+                for (auto& e : events.release) {
+                    app->ui->handleTouchEnd({e.id, e.x, e.y});
+                }
             }
         }
 

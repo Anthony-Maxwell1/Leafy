@@ -16,26 +16,42 @@ struct LuaFunction {
 
 using NamespaceMap = std::map<std::string, std::vector<LuaFunction>>;
 
+// Custom print function that works in sandbox
+int l_print(lua_State* L) {
+    int nargs = lua_gettop(L);
+    for (int i = 1; i <= nargs; i++) {
+        if (i > 1) std::cout << "\t";
+        const char* str = lua_tostring(L, i);
+        if (str) std::cout << str;
+    }
+    std::cout << "\n";
+    return 0;
+}
+
 // ------------------------
 // Sandbox (whitelist only)
 // ------------------------
 void setup_sandbox(lua_State* L) {
-    lua_newtable(L); // global env
+    // First, open the standard libraries
+    luaL_openlibs(L);
+    
+    // Now create a new restricted globals table
+    lua_newtable(L); // restricted env
 
-    // Allow basic functions
-    lua_getglobal(L, "print");
+    // Add print
+    lua_pushcfunction(L, l_print);
     lua_setfield(L, -2, "print");
 
     // math lib
-    luaL_requiref(L, "math", luaopen_math, 1);
+    lua_getglobal(L, "math");
     lua_setfield(L, -2, "math");
 
     // string lib
-    luaL_requiref(L, "string", luaopen_string, 1);
+    lua_getglobal(L, "string");
     lua_setfield(L, -2, "string");
 
     // table lib
-    luaL_requiref(L, "table", luaopen_table, 1);
+    lua_getglobal(L, "table");
     lua_setfield(L, -2, "table");
 
     lua_setglobal(L, "_G");
